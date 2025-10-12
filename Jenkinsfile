@@ -1,55 +1,98 @@
+// Jenkinsfile (Declarative Pipeline)
+
 pipeline {
     agent any
-
+    
+    // --- Environment Variables ---
     environment {
-        DOCKER_REGISTRY = "zubairalamdev"
+        // Application and Registry Details
+        DOCKER_REGISTRY = 'docker.io'
+        DOCKER_USERNAME = 'zubairalamdev'
+        DOCKER_IMAGE_NAME = "laravel-app" // Name of the image on Docker Hub
+
+        // The image tag will be unique using the Jenkins build number
+        IMAGE_TAG = "build-${env.BUILD_NUMBER}"
+        FULL_IMAGE = "${DOCKER_USERNAME}/${DOCKER_IMAGE_NAME}:${IMAGE_TAG}"
+
+        // GitOps Manifest Repository Details (replace with your actual ArgoCD repo)
+        GITOPS_REPO_URL = 'git@github.com:zubairalamdev-alam/laravel-cicd-k8s-manifests.git' // *** ASSUMED REPO NAME ***
+        GITOPS_REPO_CREDENTIALS = 'github-ssh-key-for-gitops' // Jenkins Credential ID for GitOps Repo access
+        
+        // Path to your deployment file *within* the GitOps Manifests Repository
+        K8S_DEPLOYMENT_FILE_PATH = 'k8s/deployment.yaml' 
     }
 
     stages {
-
-        stage('Checkout SCM') {
+        
+        stage('Checkout Source Code') {
             steps {
-                checkout scm
+                // Clones the application code (where the Dockerfile resides)
+                echo "Cloning Application Code: ${env.JOB_NAME}"
+                checkout scm 
             }
         }
-
-        stage('Build & Push Docker Image') {
+        
+        stage('Build Docker Image') {
+            // NOTE: Jenkins agent must have access to the Docker daemon (e.g., /var/run/docker.sock mounted)
             steps {
-                script {
-                    // Get short git commit hash
-                    def gitHash = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                echo "Building image: ${FULL_IMAGE}"
+                sh "docker build -t ${FULL_IMAGE} ." 
+            }
+        }
+        
+        stage('Push Image to Docker Hub') {
+            steps {
+                // Log in using the stored Jenkins credential
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'PASS', usernameVariable: 'USER')]) {
+                    echo "Logging into Docker Hub: ${DOCKER_USERNAME}"
+                    sh "echo \"${PASS}\" | docker login ${DOCKER_REGISTRY} -u \"${USER}\" --password-stdin"
                     
-                    // Build Docker image
-                    sh "docker build -t ${DOCKER_REGISTRY}/laravel-cicd-app:${gitHash} -f docker/php-fpm.Dockerfile ./src"
-
-                    // Push Docker image (requires Docker credentials configured in Jenkins)
-                    withDockerRegistry([credentialsId: 'docker-hub-credentials', url: '']) {
-                        sh "docker push ${DOCKER_REGISTRY}/laravel-cicd-app:${gitHash}"
-                    }
+                    echo "Pushing image..."
+                    sh "docker push ${FULL_IMAGE}"
                 }
             }
         }
-
-        stage('Update Kubernetes Manifest') {
+        
+        stage('Update GitOps Repo (CD Trigger)') {
+            // Use the Docker agent itself or an agent with Git installed
+            agent any 
+            
             steps {
-                echo "Skipping for now – implement K8s update logic here"
-            }
-        }
+                // 1. Clone the GitOps Manifests repository
+                echo "Cloning GitOps Manifests Repo..."
+                // Use the configured SSH Key credential
+                git url: "${GITOPS_REPO_URL}", credentialsId: "${GITOPS_REPO_CREDENTIALS}"
 
-        stage('Commit & Push Changes') {
-            steps {
-                echo "Skipping for now – implement Git commit logic if needed"
+                // 2. Modify the Kubernetes Deployment file
+                echo "Updating ${K8S_DEPLOYMENT_FILE_PATH} with new image tag: ${FULL_IMAGE}"
+                
+                // IMPORTANT: This 'sed' command is used to replace the image path in the deployment YAML.
+                // It assumes the image line in your deployment.yaml looks like: 'image: zubairalamdev/laravel-app:old-tag'
+                // The 'sed -i.bak' is a common syntax for macOS/BSD 'sed'
+                sh """
+                sed -i.bak 's|image: ${DOCKER_USERNAME}/${DOCKER_IMAGE_NAME}:.*|image: ${FULL_IMAGE}|' ${K8S_DEPLOYMENT_FILE_PATH}
+                rm ${K8S_DEPLOYMENT_FILE_PATH}.bak
+                """
+
+                // 3. Commit and Push the change (this triggers ArgoCD)
+                echo "Committing and pushing change to GitOps Repo..."
+                sh """
+                git config user.name "Jenkins CI/CD Pipeline"
+                git config user.email "jenkins-ci@example.com"
+                git add ${K8S_DEPLOYMENT_FILE_PATH}
+                git commit -m "Deployment Trigger: New image ${FULL_IMAGE} deployed by Jenkins Build #${env.BUILD_NUMBER}"
+                git push origin HEAD
+                """
             }
         }
     }
-
+    
     post {
-        success {
-            echo "✅ Pipeline completed successfully!"
-        }
-        failure {
-            echo "❌ Pipeline failed. Check logs."
+        always {
+            // Cleanup any unused containers/images if necessary
+            script {
+                // You can add cleanup commands here if you run containers during the build
+            }
         }
     }
 }
-
