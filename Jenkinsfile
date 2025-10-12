@@ -2,30 +2,33 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_CREDENTIALS = 'dockerhub-id' // Jenkins stored credentials
-        DOCKERHUB_REPO = '<DOCKERHUB_USER>/laravel-cicd-app'
-        K8S_MANIFEST_PATH = 'kubernetes'       // path in repo
-        GIT_CREDENTIALS = 'github-id'          // Jenkins stored credentials
+        DOCKERHUB_CREDENTIALS = 'dockerhub-id'   // Jenkins stored credentials for DockerHub
+        DOCKERHUB_REPO = 'zubairalamdev/laravel-cicd-app'
+        K8S_MANIFEST_PATH = 'kubernetes'         // path to your manifests
+        GIT_CREDENTIALS = 'github-id'            // Jenkins stored credentials for GitHub
     }
 
     stages {
 
-        stage('Checkout') {
-            steps {
-                git url: 'https://github.com/zubairalam-dev/laravel-cicd-k8s.git',
-                    credentialsId: "${GIT_CREDENTIALS}"
-            }
-        }
-
         stage('Build Docker Image') {
             steps {
                 script {
-                    COMMIT_HASH = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-                    IMAGE_TAG = "${DOCKERHUB_REPO}:${COMMIT_HASH}"
+                    // Get commit hash from Jenkins workspace
+                    def COMMIT_HASH = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    def IMAGE_TAG = "${DOCKERHUB_REPO}:${COMMIT_HASH}"
 
+                    // Build Docker image
                     sh "docker build -t ${IMAGE_TAG} ./src"
-                    sh "docker login -u $DOCKERHUB_CREDENTIALS_USR -p $DOCKERHUB_CREDENTIALS_PSW"
-                    sh "docker push ${IMAGE_TAG}"
+
+                    // Login & push to DockerHub
+                    withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CREDENTIALS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
+                        sh "docker push ${IMAGE_TAG}"
+                    }
+
+                    // Save variables for next stages
+                    env.IMAGE_TAG = IMAGE_TAG
+                    env.COMMIT_HASH = COMMIT_HASH
                 }
             }
         }
@@ -33,9 +36,8 @@ pipeline {
         stage('Update K8s Manifest') {
             steps {
                 script {
-                    // Replace image tag in deployment.yaml
                     sh """
-                        sed -i '' 's|image: .*|image: ${IMAGE_TAG}|' ${K8S_MANIFEST_PATH}/app-deployment.yaml
+                        sed -i 's|image: .*|image: ${env.IMAGE_TAG}|' ${K8S_MANIFEST_PATH}/app-deployment.yaml
                     """
                 }
             }
@@ -44,13 +46,15 @@ pipeline {
         stage('Push Manifest to Git') {
             steps {
                 script {
-                    sh """
-                        git config user.email "jenkins@ci.local"
-                        git config user.name "Jenkins CI"
-                        git add ${K8S_MANIFEST_PATH}/app-deployment.yaml
-                        git commit -m "Update image tag to ${COMMIT_HASH} [ci skip]" || echo "No changes to commit"
-                        git push origin main
-                    """
+                    withCredentials([usernamePassword(credentialsId: "${GIT_CREDENTIALS}", usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+                        sh """
+                            git config user.email "jenkins@ci.local"
+                            git config user.name "Jenkins CI"
+                            git add ${K8S_MANIFEST_PATH}/app-deployment.yaml
+                            git commit -m "Update image tag to ${env.COMMIT_HASH} [ci skip]" || echo "No changes to commit"
+                            git push https://${GIT_USER}:${GIT_PASS}@github.com/zubairalamdev-alam/laravel-cicd-k8s.git HEAD:main
+                        """
+                    }
                 }
             }
         }
