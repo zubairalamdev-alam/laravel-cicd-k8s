@@ -41,17 +41,20 @@ pipeline {
         }
         
         stage('Push Image to Docker Hub') {
-            steps {
-                // Log in using the stored Jenkins credential
-                withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'PASS', usernameVariable: 'USER')]) {
-                    echo "Logging into Docker Hub: ${DOCKER_USERNAME}"
-                    sh "echo \"${PASS}\" | docker login ${DOCKER_REGISTRY} -u \"${USER}\" --password-stdin"
-                    
-                    echo "Pushing image..."
-                    sh "docker push ${FULL_IMAGE}"
-                }
-            }
+    steps {
+        // Use the ID created in Jenkins Credentials
+        withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+            // 1. Log in to Docker Hub
+            sh "echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin"
+
+            // 2. Push the built image
+            sh "docker push ${FULL_IMAGE}"
+
+            // 3. Log out (optional but good practice)
+            sh "docker logout"
         }
+    }
+}
         
         stage('Update GitOps Repo (CD Trigger)') {
             // Use the Docker agent itself or an agent with Git installed
