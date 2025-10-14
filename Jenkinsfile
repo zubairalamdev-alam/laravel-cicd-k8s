@@ -6,12 +6,12 @@ pipeline {
         DOCKER_IMAGE = 'my-laravel-image:latest'
     }
 
-    stages {
-        stage('Checkout') {
-            steps {
-                git branch: 'main', url: 'https://github.com/zubairalamdev-alam/laravel-cicd-k8s.git'
-            }
-        }
+   stage('Checkout') {
+    steps {
+        git branch: 'main', url: 'https://github.com/zubairalamdev-alam/laravel-cicd-k8s.git'
+    }
+}
+
 
         stage('Build') {
             steps {
