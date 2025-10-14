@@ -9,7 +9,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                git branch: 'main', url: 'https://github.com/zubairalamdev-alam/laravel-cicd-k8s.git'
             }
         }
 
@@ -35,10 +35,10 @@ pipeline {
             steps {
                 script {
                     echo 'Deploying application...'
-                    sh '''
+                    sh """
                         kubectl apply -f k8s/deployment.yaml
                         kubectl rollout status deployment/$APP_NAME
-                    '''
+                    """
                 }
             }
         }
