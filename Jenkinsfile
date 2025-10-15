@@ -2,54 +2,59 @@ pipeline {
     agent any
 
     environment {
-        APP_NAME = 'laravel-app'
-        DOCKER_IMAGE = 'my-laravel-image:latest'
+        DOCKERHUB_USER       = "zubairalamdev"
+        DOCKERHUB_REPO       = "laravel-app"
+        DOCKER_CREDENTIALS   = "docker-hub-creds"   // Jenkins credential ID for Docker Hub
+        MANIFESTS_REPO       = "git@github.com:zubairalamdev-alam/laravel-cicd-k8s-manifests.git"
+        MANIFESTS_CREDENTIALS = "github-ssh-key-for-gitops"     // Jenkins credential ID for GitHub SSH/HTTPS
+        IMAGE_TAG            = ""                  // initialized here
     }
 
-   stage('Checkout') {
-    steps {
-        git branch: 'main', url: 'https://github.com/zubairalamdev-alam/laravel-cicd-k8s.git'
+    stages {
+        stage('Checkout App Repo') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/zubairalamdev-alam/laravel-cicd-k8s.git'
+            }
+        }
+
+        stage('Build & Push Docker Image') {
+            steps {
+                script {
+                    env.IMAGE_TAG = "build-${BUILD_NUMBER}"   // set IMAGE_TAG globally
+                    docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_CREDENTIALS}") {
+                        def appImage = docker.build("${DOCKERHUB_USER}/${DOCKERHUB_REPO}:${env.IMAGE_TAG}", ".")
+                        appImage.push()
+                        appImage.push("latest")  // optional: always update latest
+                    }
+                }
+            }
+        }
+
+        stage('Update Manifests Repo') {
+            steps {
+                dir('manifests') {
+                    git branch: 'main',
+                        url: "${MANIFESTS_REPO}",
+                        credentialsId: "${MANIFESTS_CREDENTIALS}"
+
+                    script {
+                        // Update image in app-deployment.yaml
+                        sh """
+                        sed -i 's#image: ${DOCKERHUB_USER}/${DOCKERHUB_REPO}:.*#image: ${DOCKERHUB_USER}/${DOCKERHUB_REPO}:${IMAGE_TAG}#' app-deployment.yaml
+                        """
+
+                        sh """
+                        git config user.name "Jenkins"
+                        git config user.email "jenkins@cicd.local"
+                        git add app-deployment.yaml
+                        git commit -m "Update image to ${DOCKERHUB_USER}/${DOCKERHUB_REPO}:${IMAGE_TAG}"
+                        git push origin main
+                        """
+                    }
+                }
+            }
+        }
     }
 }
 
-
-        stage('Build') {
-            steps {
-                script {
-                    echo 'Building Docker image...'
-                    sh 'docker build -t $DOCKER_IMAGE .'
-                }
-            }
-        }
-
-        stage('Test') {
-            steps {
-                script {
-                    echo 'Running tests...'
-                    sh 'docker run --rm $DOCKER_IMAGE php artisan test'
-                }
-            }
-        }
-
-        stage('Deploy') {
-            steps {
-                script {
-                    echo 'Deploying application...'
-                    sh """
-                        kubectl apply -f k8s/deployment.yaml
-                        kubectl rollout status deployment/$APP_NAME
-                    """
-                }
-            }
-        }
-    }
-
-    post {
-        success {
-            echo 'Pipeline completed successfully!'
-        }
-        failure {
-            echo 'Pipeline failed.'
-        }
-    }
-}
