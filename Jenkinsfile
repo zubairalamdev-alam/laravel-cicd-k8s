@@ -31,22 +31,25 @@ pipeline {
         }
 
         stage('Update Manifests Repo') {
-            steps {
-                dir('manifests') {
-                    git branch: 'main',
-                        url: "${MANIFESTS_REPO}",
-                        credentialsId: "${MANIFESTS_CREDENTIALS}"
+    dir('manifests') {
+        git branch: 'main',
+            url: 'git@github.com:zubairalamdev-alam/laravel-cicd-k8s-manifests.git',
+            credentialsId: 'github-ssh-key-for-gitops'
 
-                    sh """
-                      sed -i 's|image: .*|image: ${DOCKERHUB_USER}/${DOCKERHUB_REPO}:${env.IMAGE_TAG}|' app-deployment.yaml
-                      git config user.email "jenkins@cicd.com"
-                      git config user.name "Jenkins CI"
-                      git add app-deployment.yaml
-                      git commit -m "Update image to ${DOCKERHUB_USER}/${DOCKERHUB_REPO}:${env.IMAGE_TAG}" || echo "No changes to commit"
-                      git push origin main
-                    """
-                }
-            }
-        }
+        sh '''
+        # Update the deployment file with the new image tag
+        sed -i "s|image: zubairalamdev/laravel-app:.*|image: zubairalamdev/laravel-app:build-${BUILD_NUMBER}|" app-deployment.yaml
+
+        git config user.email "ci-bot@example.com"
+        git config user.name "Jenkins CI"
+
+        git add app-deployment.yaml
+        git commit -m "Update image tag to build-${BUILD_NUMBER}"
+        git push origin main
+        '''
     }
 }
+
+        }
+    }
+
