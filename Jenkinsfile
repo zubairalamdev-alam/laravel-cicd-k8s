@@ -2,13 +2,10 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_USER       = "zubairalamdev"
-        DOCKERHUB_REPO       = "laravel-app"
-        DOCKER_CREDENTIALS   = "docker-hub-creds"   // Jenkins credential ID for Docker Hub
-        MANIFESTS_REPO       = "git@github.com:zubairalamdev-alam/laravel-cicd-k8s-manifests.git"
-        MANIFESTS_CREDENTIALS = "github-ssh-key-for-gitops"     // Jenkins credential ID for GitHub SSH/HTTPS
-        IMAGE_TAG            = ""                  // initialized here
-    }
+    DOCKERHUB_USER  = "zubairalamdev"      // your Docker Hub username
+    DOCKERHUB_REPO  = "laravel-app"        // repo name only (not user/repo)
+    DOCKER_CREDENTIALS = "docker-hub-creds" // must match exactly what Jenkins has
+}
 
     stages {
         stage('Checkout App Repo') {
@@ -19,17 +16,18 @@ pipeline {
         }
 
         stage('Build & Push Docker Image') {
-            steps {
-                script {
-                    env.IMAGE_TAG = "build-${BUILD_NUMBER}"   // set IMAGE_TAG globally
-                    docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_CREDENTIALS}") {
-                        def appImage = docker.build("${DOCKERHUB_USER}/${DOCKERHUB_REPO}:${env.IMAGE_TAG}", ".")
-                        appImage.push()
-                        appImage.push("latest")  // optional: always update latest
-                    }
-                }
+    steps {
+        script {
+            env.IMAGE_TAG = "build-${BUILD_NUMBER}"   // unique per build
+            docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_CREDENTIALS}") {
+                def appImage = docker.build("${DOCKERHUB_USER}/${DOCKERHUB_REPO}:${env.IMAGE_TAG}", ".")
+                appImage.push()
+                appImage.push("latest")  // optional: also update latest tag
             }
         }
+    }
+}
+
 
         stage('Update Manifests Repo') {
             steps {
