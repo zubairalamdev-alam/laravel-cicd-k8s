@@ -2,11 +2,11 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_USER      = "zubairalamdev"
-        DOCKERHUB_REPO      = "laravel-app"
-        DOCKER_CREDENTIALS  = "docker-hub-creds"  // must match Jenkins credentials ID
-        MANIFESTS_REPO      = "https://github.com/zubairalamdev-alam/laravel-cicd-k8s-manifests.git"
-        MANIFESTS_CREDENTIALS = "github-ssh-key-for-gitops"   // Jenkins GitHub credentials
+        DOCKERHUB_USER        = "zubairalamdev"
+        DOCKERHUB_REPO        = "laravel-app"
+        DOCKER_CREDENTIALS    = "docker-hub-creds"          // must match Jenkins credentials ID
+        MANIFESTS_REPO        = "git@github.com:zubairalamdev-alam/laravel-cicd-k8s-manifests.git"
+        MANIFESTS_CREDENTIALS = "github-ssh-key-for-gitops" // Jenkins GitHub credentials ID
     }
 
     stages {
@@ -31,22 +31,21 @@ pipeline {
         }
 
         stage('Update Manifests Repo') {
-    dir('manifests') {
-        git branch: 'main',
-            url: 'https://github.com/zubairalamdev-alam/laravel-cicd-k8s-manifests.git',
-            credentialsId: 'github-ssh-key-for-gitops'
+            steps {
+                dir('manifests') {
+                    git branch: 'main',
+                        url: "${MANIFESTS_REPO}",
+                        credentialsId: "${MANIFESTS_CREDENTIALS}"
 
-        sh """
-          sed -i 's|image: .*|image: zubairalamdev/laravel-app:build-${BUILD_NUMBER}|' app-deployment.yaml
-          git config user.email "jenkins@cicd.com"
-          git config user.name "Jenkins CI"
-          git add app-deployment.yaml
-          git commit -m "Update image to build-${BUILD_NUMBER}"
-          git push origin main
-        """
-    }
-}
-
+                    sh """
+                      sed -i 's|image: .*|image: ${DOCKERHUB_USER}/${DOCKERHUB_REPO}:build-${BUILD_NUMBER}|' app-deployment.yaml
+                      git config user.email "jenkins@cicd.com"
+                      git config user.name "Jenkins CI"
+                      git add app-deployment.yaml
+                      git commit -m "Update image to build-${BUILD_NUMBER}" || echo "No changes to commit"
+                      git push origin main
+                    """
+                }
             }
         }
     }
