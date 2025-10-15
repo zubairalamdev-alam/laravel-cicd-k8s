@@ -6,7 +6,7 @@ pipeline {
         DOCKERHUB_REPO      = "laravel-app"
         DOCKER_CREDENTIALS  = "docker-hub-creds"  // must match Jenkins credentials ID
         MANIFESTS_REPO      = "https://github.com/zubairalamdev-alam/laravel-cicd-k8s-manifests.git"
-        MANIFESTS_CREDENTIALS = "github-creds"   // Jenkins GitHub credentials
+        MANIFESTS_CREDENTIALS = "github-ssh-key-for-gitops"   // Jenkins GitHub credentials
     }
 
     stages {
