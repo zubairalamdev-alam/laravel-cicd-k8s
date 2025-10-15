@@ -24,32 +24,32 @@ pipeline {
                     docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_CREDENTIALS}") {
                         def appImage = docker.build("${DOCKERHUB_USER}/${DOCKERHUB_REPO}:${env.IMAGE_TAG}", ".")
                         appImage.push()
-                        appImage.push("latest") // optional
+                        appImage.push("latest")
                     }
                 }
             }
         }
 
         stage('Update Manifests Repo') {
-    dir('manifests') {
-        git branch: 'main',
-            url: 'git@github.com:zubairalamdev-alam/laravel-cicd-k8s-manifests.git',
-            credentialsId: 'github-ssh-key-for-gitops'
+            steps {
+                dir('manifests') {
+                    git branch: 'main',
+                        url: "${MANIFESTS_REPO}",
+                        credentialsId: "${MANIFESTS_CREDENTIALS}"
 
-        sh '''
-        # Update the deployment file with the new image tag
-        sed -i "s|image: zubairalamdev/laravel-app:.*|image: zubairalamdev/laravel-app:build-${BUILD_NUMBER}|" app-deployment.yaml
+                    sh '''
+                    # Update deployment with new image
+                    sed -i "s|image: zubairalamdev/laravel-app:.*|image: zubairalamdev/laravel-app:build-${BUILD_NUMBER}|" app-deployment.yaml
 
-        git config user.email "ci-bot@example.com"
-        git config user.name "Jenkins CI"
+                    git config user.email "ci-bot@example.com"
+                    git config user.name "Jenkins CI"
 
-        git add app-deployment.yaml
-        git commit -m "Update image tag to build-${BUILD_NUMBER}"
-        git push origin main
-        '''
-    }
-
-
+                    git add app-deployment.yaml
+                    git commit -m "Update image tag to build-${BUILD_NUMBER}" || echo "No changes to commit"
+                    git push origin main
+                    '''
+                }
+            }
         }
     }
-
+}
